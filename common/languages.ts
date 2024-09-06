@@ -23,6 +23,7 @@ import { vhdl as vhdlLanguage } from "@codemirror/legacy-modes/mode/vhdl?externa
 import { dockerFile as dockerfileLanguage } from "@codemirror/legacy-modes/mode/dockerfile?external=@codemirror/language&target=es2022";
 import { cmake as cmakeLanguage } from "@codemirror/legacy-modes/mode/cmake?external=@codemirror/language&target=es2022";
 import { erlang as erlangLanguage } from "@codemirror/legacy-modes/mode/erlang?external=@codemirror/language&target=es2022";
+import { properties as propertiesLanguage } from "@codemirror/legacy-modes/mode/properties?external=@codemirror/language&target=es2022";
 import {
   c as cLanguage,
   cpp as cppLanguage,
@@ -114,6 +115,8 @@ export const builtinLanguages: Record<string, Language> = {
   "dockerfile": StreamLanguage.define(dockerfileLanguage),
   "cmake": StreamLanguage.define(cmakeLanguage),
   "erlang": StreamLanguage.define(erlangLanguage),
+  "ini": StreamLanguage.define(propertiesLanguage),
+  "properties": StreamLanguage.define(propertiesLanguage),
   "query": LRLanguage.define({
     name: "query",
     parser: highlightingQueryParser,
