@@ -28,8 +28,11 @@ export function getText(): Promise<string> {
  * This updates the editor text, but in a minimal-diff way:
  * it compares the current editor text with the new text, and only sends the changes to the editor, thereby preserving cursor location
  */
-export function setText(newText: string): Promise<void> {
-  return syscall("editor.setText", newText);
+export function setText(
+  newText: string,
+  isolateHistory = false,
+): Promise<void> {
+  return syscall("editor.setText", newText, isolateHistory);
 }
 
 /**
@@ -121,6 +124,10 @@ export function reloadConfigAndCommands(): Promise<void> {
  */
 export function openUrl(url: string, existingWindow = false): Promise<void> {
   return syscall("editor.openUrl", url, existingWindow);
+}
+
+export function newWindow(): Promise<void> {
+  return syscall("editor.newWindow");
 }
 
 /**

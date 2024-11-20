@@ -10,12 +10,19 @@ import {
   resolvePath,
 } from "@silverbulletmd/silverbullet/lib/resolve";
 import { parse } from "$common/markdown_parser/parse_tree.ts";
-import { parsePageRef } from "../../plug-api/lib/page_ref.ts";
 import { extendedMarkdownLanguage } from "$common/markdown_parser/parser.ts";
-import { tagPrefix } from "../../plugs/index/constants.ts";
 import { renderToText } from "@silverbulletmd/silverbullet/lib/tree";
+import { attachWidgetEventHandlers } from "./widget_util.ts";
 
-const activeWidgets = new Set<MarkdownWidget>();
+export const activeWidgets = new Set<DomWidget>();
+
+export interface DomWidget {
+  dom?: HTMLElement;
+  renderContent(
+    div: HTMLElement,
+    cachedHtml: string | undefined,
+  ): Promise<void>;
+}
 
 export class MarkdownWidget extends WidgetType {
   public dom?: HTMLElement;
@@ -27,6 +34,7 @@ export class MarkdownWidget extends WidgetType {
     readonly bodyText: string,
     readonly codeWidgetCallback: CodeWidgetCallback,
     readonly className: string,
+    private tryInline = false,
   ) {
     super();
   }
@@ -91,6 +99,15 @@ export class MarkdownWidget extends WidgetType {
       return;
     }
 
+    if (this.tryInline) {
+      if (trimmedMarkdown.includes("\n")) {
+        // Heuristic that this is going to be a multi-line output and we should render this as a HTML block
+        div.style.display = "block";
+      } else {
+        div.style.display = "inline";
+      }
+    }
+
     // Parse the markdown again after trimming
     mdTree = parse(
       extendedMarkdownLanguage,
@@ -152,100 +169,19 @@ export class MarkdownWidget extends WidgetType {
     if (!html) {
       return "";
     }
-    return `<div class="button-bar">${
-      buttons.filter((button) => !button.widgetTarget).map((button, idx) =>
-        `<button data-button="${idx}" title="${button.description}">${button.svg}</button> `
-      ).join("")
-    }</div><div class="content">${html}</div>`;
+    if (buttons.length === 0) {
+      return html;
+    } else {
+      return `<div class="button-bar">${
+        buttons.filter((button) => !button.widgetTarget).map((button, idx) =>
+          `<button data-button="${idx}" title="${button.description}">${button.svg}</button> `
+        ).join("")
+      }</div><div class="content">${html}</div>`;
+    }
   }
 
   private attachListeners(div: HTMLElement, buttons?: CodeWidgetButton[]) {
-    div.addEventListener("mousedown", (e) => {
-      // CodeMirror overrides mousedown on parent elements to implement its own selection highlighting.
-      // That's nice, but not for markdown widgets, so let's not propagate the event to CodeMirror here.
-      e.stopPropagation();
-    });
-    // Override wiki links with local navigate (faster)
-    div.querySelectorAll("a[data-ref]").forEach((el_) => {
-      const el = el_ as HTMLElement;
-      // Override default click behavior with a local navigate (faster)
-      el.addEventListener("click", (e) => {
-        if (e.ctrlKey || e.metaKey) {
-          // Don't do anything special for ctrl/meta clicks
-          return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        const pageRef = parsePageRef(el.dataset.ref!);
-        this.client.navigate(pageRef, false, e.ctrlKey || e.metaKey);
-      });
-    });
-
-    // Attach click handlers to hash tags
-    div.querySelectorAll("span.hashtag").forEach((el_) => {
-      const el = el_ as HTMLElement;
-      // Override default click behavior with a local navigate (faster)
-      el.addEventListener("click", (e) => {
-        if (e.ctrlKey || e.metaKey) {
-          // Don't do anything special for ctrl/meta clicks
-          return;
-        }
-        this.client.navigate({
-          page: `${tagPrefix}${el.innerText.slice(1)}`,
-          pos: 0,
-        });
-      });
-    });
-
-    div.querySelectorAll("button[data-onclick]").forEach((el_) => {
-      const el = el_ as HTMLElement;
-      const onclick = el.dataset.onclick!;
-      const parsedOnclick = JSON.parse(onclick);
-      if (parsedOnclick[0] === "command") {
-        const command = parsedOnclick[1];
-        el.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          console.info(
-            "Command link clicked in widget, running",
-            parsedOnclick,
-          );
-          this.client.runCommandByName(command, parsedOnclick[2]).catch(
-            console.error,
-          );
-        });
-      }
-    });
-
-    // Implement task toggling
-    div.querySelectorAll("span[data-external-task-ref]").forEach((el: any) => {
-      const taskRef = el.dataset.externalTaskRef;
-      const input = el.querySelector("input[type=checkbox]")!;
-      input.addEventListener(
-        "click",
-        (e: any) => {
-          // Avoid triggering the click on the parent
-          e.stopPropagation();
-        },
-      );
-      input.addEventListener(
-        "change",
-        (e: any) => {
-          e.stopPropagation();
-          const oldState = e.target.dataset.state;
-          const newState = oldState === " " ? "x" : " ";
-          // Update state in DOM as well for future toggles
-          e.target.dataset.state = newState;
-          console.log("Toggling task", taskRef);
-          this.client.clientSystem.localSyscall(
-            "system.invokeFunction",
-            ["tasks.updateTaskState", taskRef, oldState, newState],
-          ).catch(
-            console.error,
-          );
-        },
-      );
-    });
+    attachWidgetEventHandlers(div, this.client, this.from);
 
     if (!buttons) {
       buttons = [];
@@ -281,20 +217,21 @@ export class MarkdownWidget extends WidgetType {
     }
   }
 
-  get estimatedHeight(): number {
+  override get estimatedHeight(): number {
     const cacheItem = this.client.getWidgetCache(this.cacheKey);
     return cacheItem ? cacheItem.height : -1;
   }
 
-  eq(other: WidgetType): boolean {
+  override eq(other: WidgetType): boolean {
     return (
       other instanceof MarkdownWidget &&
-      other.bodyText === this.bodyText && other.cacheKey === this.cacheKey
+      other.bodyText === this.bodyText && other.cacheKey === this.cacheKey &&
+      this.from === other.from
     );
   }
 }
 
-export function reloadAllMarkdownWidgets() {
+export function reloadAllWidgets() {
   for (const widget of activeWidgets) {
     // Garbage collect as we go
     if (!widget.dom || !widget.dom.parentNode) {

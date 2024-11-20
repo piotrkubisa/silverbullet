@@ -12,6 +12,7 @@ import type { PanelWidgetHook } from "../web/hooks/panel_widget.ts";
 import type { SlashCommandHook } from "../web/hooks/slash_command.ts";
 import type { DataStoreMQ } from "$lib/data/mq.datastore.ts";
 import type { ParseTree } from "../plug-api/lib/tree.ts";
+import { SpaceLuaEnvironment } from "$common/space_lua.ts";
 
 const mqTimeout = 10000; // 10s
 const mqTimeoutRetry = 3;
@@ -29,6 +30,7 @@ export abstract class CommonSystem {
   readonly allKnownFiles = new Set<string>();
   readonly spaceScriptCommands = new Map<string, AppCommand>();
   scriptEnv: ScriptEnvironment = new ScriptEnvironment();
+  spaceLuaEnv = new SpaceLuaEnvironment();
 
   constructor(
     protected mq: DataStoreMQ,
@@ -60,6 +62,7 @@ export abstract class CommonSystem {
           Object.keys(this.scriptEnv.eventHandlers).length,
           "event handlers from space-script",
         );
+        await this.spaceLuaEnv.reload(this.system, this.scriptEnv);
       } catch (e: any) {
         console.error("Error loading space-script:", e.message);
       }
@@ -76,6 +79,7 @@ export abstract class CommonSystem {
 
       this.commandHook.throttledBuildAllCommands();
     }
+
     // Swap in the expanded function map
     this.ds.functionMap = functions;
   }

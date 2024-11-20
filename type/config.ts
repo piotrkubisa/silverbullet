@@ -1,4 +1,9 @@
-import type { ActionButton, EmojiConfig, Shortcut } from "./client.ts";
+import type {
+  ActionButton,
+  EmojiConfig,
+  Shortcut,
+  SmartQuotesConfig,
+} from "./client.ts";
 
 export interface ConfigContainer {
   config: Config;
@@ -30,6 +35,7 @@ export type LibraryDef = {
 export type Config = {
   indexPage: string;
   shortcuts?: Shortcut[];
+  // DEPRECATED: Use smartQuotes instead
   useSmartQuotes?: boolean;
   maximumAttachmentSize?: number;
   libraries?: LibraryDef[];
@@ -43,6 +49,8 @@ export type Config = {
   // Format: compatible with docker ignore
   spaceIgnore?: string;
   emoji?: EmojiConfig;
+  autoCloseBrackets: string;
+  smartQuotes?: SmartQuotesConfig;
 
   schema: SchemaConfig;
 
@@ -64,6 +72,7 @@ export const defaultConfig: Config = {
   maximumAttachmentSize: 10, // MiB
   defaultLinkStyle: "wikilink", // wikilink [[]] or markdown []()
   actionButtons: [], // Actually defaults to defaultActionButtons
+  autoCloseBrackets: "([{`",
 
   schema: {
     config: {

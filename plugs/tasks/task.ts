@@ -178,9 +178,18 @@ export function previewTaskToggle(eventString: string) {
   }
 }
 
-async function cycleTaskState(
-  node: ParseTree,
-) {
+async function convertListItemToTask(node: ParseTree) {
+  const listMark = node.children![0];
+  await editor.dispatch({
+    changes: {
+      from: listMark.from,
+      to: listMark.to,
+      insert: "* [ ]",
+    },
+  });
+}
+
+async function cycleTaskState(node: ParseTree) {
   const stateText = node.children![1].text!;
   let changeTo: string | undefined;
   if (completeStates.includes(stateText)) {
@@ -328,14 +337,23 @@ export async function taskCycleCommand() {
   const taskNode = node.type === "Task"
     ? node
     : findParentMatching(node!, (n) => n.type === "Task");
-  if (!taskNode) {
+
+  if (taskNode) {
+    const taskState = findNodeOfType(taskNode!, "TaskState");
+    if (taskState) {
+      await cycleTaskState(taskState);
+    }
+    return;
+  }
+
+  // Convert a bullet point to a task
+  const listItem = findParentMatching(node!, (n) => n.type === "ListItem");
+  if (!listItem) {
     await editor.flashNotification("No task at cursor");
     return;
   }
-  const taskState = findNodeOfType(taskNode!, "TaskState");
-  if (taskState) {
-    await cycleTaskState(taskState);
-  }
+
+  convertListItemToTask(listItem);
 }
 
 export async function postponeCommand() {

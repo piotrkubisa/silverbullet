@@ -44,7 +44,7 @@ functions:
     command:
       name: "Space: Reindex"
       requireMode: rw
-      
+
   processIndexQueue:
     path: ./command.ts:processIndexQueue
     mqSubscriptions:
@@ -129,6 +129,10 @@ functions:
     path: script.ts:indexSpaceScript
     events:
       - page:index
+  indexSpaceLua:
+    path: script.ts:indexSpaceLua
+    events:
+      - page:index
 
   # Style
   indexSpaceStyle:
@@ -204,6 +208,11 @@ functions:
     events:
       - editor:lint
 
+  lintLua:
+    path: lint.ts:lintLua
+    events:
+      - editor:lint
+
   # Tag file system
   readFileTag:
     path: tag_page.ts:readFileTag
@@ -233,7 +242,7 @@ functions:
     events:
       - query:command
 config:
-   # Schema for the built-in tags indexed by this plug
+  # Schema for the built-in tags indexed by this plug
   schema.tag:
     page:
       type: object

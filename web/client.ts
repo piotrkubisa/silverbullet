@@ -147,7 +147,8 @@ export class Client implements ConfigContainer {
       this.fullSyncCompleted = true;
     }
     // Generate a semi-unique prefix for the database so not to reuse databases for different space paths
-    this.dbPrefix = "" + simpleHash(window.silverBulletConfig.spaceFolderPath);
+    this.dbPrefix = "" +
+      simpleHash(globalThis.silverBulletConfig.spaceFolderPath);
     this.onLoadPageRef = parsePageRefFromURI();
   }
 
@@ -503,7 +504,7 @@ export class Client implements ConfigContainer {
   async initSpace(): Promise<SpacePrimitives> {
     this.httpSpacePrimitives = new HttpSpacePrimitives(
       location.origin,
-      window.silverBulletConfig.spaceFolderPath,
+      globalThis.silverBulletConfig.spaceFolderPath,
     );
 
     let remoteSpacePrimitives: SpacePrimitives = this.httpSpacePrimitives;
@@ -659,7 +660,7 @@ export class Client implements ConfigContainer {
           if (this.currentPage) {
             if (
               !this.ui.viewState.unsavedChanges ||
-              this.ui.viewState.uiOptions.forcedROMode
+              this.ui.viewState.uiOptions.forcedROMode || this.readOnlyMode
             ) {
               // No unsaved changes, or read-only mode, not gonna save
               return resolve();
@@ -1143,7 +1144,7 @@ export class Client implements ConfigContainer {
       this.space.watchPage(pageName);
     } else {
       // Just apply minimal patches so that the cursor is preserved
-      await editor.setText(doc.text);
+      await editor.setText(doc.text, true);
     }
 
     // Note: these events are dispatched asynchronously deliberately (not waiting for results)
@@ -1255,7 +1256,6 @@ export class Client implements ConfigContainer {
       .catch(
         console.error,
       );
-    // console.log("Flushed widget height cache to store");
   }, 2000);
 
   setCachedWidgetHeight(bodyText: string, height: number) {
@@ -1271,7 +1271,6 @@ export class Client implements ConfigContainer {
       .catch(
         console.error,
       );
-    console.log("Flushed widget cache to store");
   }, 2000);
 
   setWidgetCache(key: string, cacheItem: WidgetCacheItem) {

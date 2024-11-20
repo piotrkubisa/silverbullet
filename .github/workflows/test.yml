@@ -18,9 +18,9 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.46
+          deno-version: v2.0
 
       - name: Run build
         run: deno task build
@@ -35,4 +35,4 @@ jobs:
         run: deno task bench
 
       - name: Run tests
-        run: deno task test --trace-ops
+        run: deno task test

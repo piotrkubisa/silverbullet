@@ -1,4 +1,8 @@
-import { clientStore, editor } from "@silverbulletmd/silverbullet/syscalls";
+import {
+  clientStore,
+  codeWidget,
+  editor,
+} from "@silverbulletmd/silverbullet/syscalls";
 
 // Run on "editor:init"
 export async function setEditorMode() {
@@ -77,8 +81,10 @@ export async function customFlashMessage(_def: any, message: string) {
 }
 
 export async function reloadSystem() {
+  await editor.save();
   await editor.reloadConfigAndCommands();
-  await editor.flashNotification("Reloaded system");
+  await codeWidget.refreshAll();
+  await editor.flashNotification("System and widgets reloaded!");
 }
 
 export async function findInPageCommand() {
@@ -96,4 +102,8 @@ export function redoCommand() {
 
 export function deleteLineCommand() {
   return editor.deleteLine();
+}
+
+export function newWindowCommand() {
+  return editor.newWindow();
 }

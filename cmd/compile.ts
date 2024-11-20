@@ -1,11 +1,15 @@
-import { path, YAML } from "../lib/deps_server.ts";
+import * as path from "@std/path";
+import * as YAML from "@std/yaml";
 import { denoPlugins } from "@luca/esbuild-deno-loader";
 import * as esbuild from "esbuild";
 import { bundleAssets } from "../lib/asset_bundle/builder.ts";
 import type { Manifest } from "../lib/plugos/types.ts";
 import { version } from "../version.ts";
 
-// const workerRuntimeUrl = new URL("./worker_runtime.ts", import.meta.url);
+// const workerRuntimeUrl = new URL(
+//   "../lib/plugos/worker_runtime.ts",
+//   import.meta.url,
+// );
 const workerRuntimeUrl =
   `https://deno.land/x/silverbullet@${version}/lib/plugos/worker_runtime.ts`;
 
@@ -89,7 +93,7 @@ const manifest = ${JSON.stringify(manifest, null, 2)};
 
 export const plug = {manifest, functionMapping};
 
-setupMessageListener(functionMapping, manifest);
+setupMessageListener(functionMapping, manifest, self.postMessage);
 `;
 
   // console.log("Code:", jsFile);

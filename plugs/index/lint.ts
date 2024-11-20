@@ -1,5 +1,6 @@
 import {
   jsonschema,
+  lua,
   system,
   YAML,
 } from "@silverbulletmd/silverbullet/syscalls";
@@ -22,7 +23,7 @@ export async function lintYAML({ tree }: LintEvent): Promise<LintDiagnostic[]> {
   const diagnostics: LintDiagnostic[] = [];
   const frontmatter = await extractFrontmatter(tree);
   const tags = ["page", ...frontmatter.tags || []];
-  const schemaConfig = await system.getSpaceConfig("schema");
+  const schemaConfig = await system.getSpaceConfig("schema", {});
   await traverseTreeAsync(tree, async (node) => {
     if (node.type === "FrontMatterCode") {
       // Query all readOnly attributes for pages with this tag set
@@ -110,7 +111,7 @@ export async function lintYAML({ tree }: LintEvent): Promise<LintDiagnostic[]> {
             let parsed = await YAML.parse(yamlCode);
             parsed = cleanupJSON(parsed);
             // If tag schemas are defined, validate them
-            if (parsed.schema?.tag) {
+            if (parsed?.schema?.tag) {
               for (
                 let [tagName, tagSchema] of Object.entries(parsed.schema.tag)
               ) {
@@ -190,7 +191,7 @@ async function lintYaml(
         };
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     const errorMatch = errorRegex.exec(e.message);
     if (errorMatch) {
       console.log("YAML error", e.message);
@@ -210,4 +211,50 @@ async function lintYaml(
       };
     }
   }
+}
+
+export async function lintLua({ tree }: LintEvent): Promise<LintDiagnostic[]> {
+  const diagnostics: LintDiagnostic[] = [];
+  await traverseTreeAsync(tree, async (node) => {
+    if (node.type === "FencedCode") {
+      const codeInfo = findNodeOfType(node, "CodeInfo")!;
+      if (!codeInfo) {
+        return true;
+      }
+      const codeLang = codeInfo.children![0].text!;
+      if (codeLang !== "space-lua") {
+        return true;
+      }
+      const codeText = findNodeOfType(node, "CodeText");
+      if (!codeText) {
+        return true;
+      }
+      const luaCode = renderToText(codeText);
+      try {
+        await lua.parse(luaCode);
+      } catch (e: any) {
+        const offset = codeText.from!;
+        let from = codeText.from!;
+        let to = codeText.to!;
+        if (e.message.includes("Parse error (")) {
+          const errorMatch = errorRegex.exec(e.message);
+          if (errorMatch) {
+            from = offset + parseInt(errorMatch[1], 10);
+            to = offset + parseInt(errorMatch[2], 10);
+          }
+        }
+        diagnostics.push({
+          from,
+          to,
+          severity: "error",
+          message: e.message,
+        });
+        console.log("Lua error", e);
+      }
+      return true;
+    }
+
+    return false;
+  });
+  return diagnostics;
 }

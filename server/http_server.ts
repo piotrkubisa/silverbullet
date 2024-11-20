@@ -20,6 +20,8 @@ import {
   parsePageRef,
 } from "@silverbulletmd/silverbullet/lib/page_ref";
 import { base64Encode } from "$lib/crypto.ts";
+import { LockoutTimer } from "./lockout.ts";
+import type { AuthOptions } from "../cmd/server.ts";
 
 const authenticationExpirySeconds = 60 * 60 * 24 * 7; // 1 week
 
@@ -31,11 +33,8 @@ export type ServerOptions = {
   baseKvPrimitives: KvPrimitives;
   certFile?: string;
   keyFile?: string;
-
-  // Enable username/password auth
-  auth?: { user: string; pass: string };
-  // Additional API auth token
-  authToken?: string;
+  // Enable username/password/token auth
+  auth?: AuthOptions;
   pagesPath: string;
   shellBackend: string;
   syncOnly: boolean;
@@ -315,10 +314,20 @@ export class HttpServer {
       "/.auth",
     ];
 
+    // Since we're a single user app, we can use a single lockout timer to prevent brute force attacks
+    const lockoutTimer = this.options.auth?.lockoutLimit
+      ? new LockoutTimer(
+        // Turn into ms
+        this.options.auth.lockoutTime * 1000,
+        this.options.auth.lockoutLimit!,
+      )
+      : new LockoutTimer(0, 0); // disabled
+
     // TODO: This should probably be a POST request
     this.app.get("/.logout", (c) => {
       const url = new URL(c.req.url);
       deleteCookie(c, authCookieName(url.host));
+      deleteCookie(c, "refreshLogin");
 
       return c.redirect("/.auth");
     });
@@ -331,45 +340,59 @@ export class HttpServer {
       validator("form", (value, c) => {
         const username = value["username"];
         const password = value["password"];
+        const rememberMe = value["rememberMe"];
 
         if (
           !username || typeof username !== "string" ||
-          !password || typeof password !== "string"
+          !password || typeof password !== "string" ||
+          (rememberMe && typeof rememberMe !== "string")
         ) {
           return c.redirect("/.auth?error=0");
         }
 
-        return { username, password };
+        return { username, password, rememberMe };
       }),
       async (c) => {
         const req = c.req;
         const url = new URL(c.req.url);
-        const { username, password } = req.valid("form");
+        const { username, password, rememberMe } = req.valid("form");
 
         const {
           user: expectedUser,
           pass: expectedPassword,
         } = this.spaceServer.auth!;
 
+        if (lockoutTimer.isLocked()) {
+          console.error("Authentication locked out, redirecting to auth page.");
+          return c.redirect("/.auth?error=2");
+        }
+
         if (username === expectedUser && password === expectedPassword) {
           // Generate a JWT and set it as a cookie
-          const jwt = await this.spaceServer.jwtIssuer.createJWT(
-            { username },
-            authenticationExpirySeconds,
-          );
+          const jwt = rememberMe
+            ? await this.spaceServer.jwtIssuer.createJWT({ username })
+            : await this.spaceServer.jwtIssuer.createJWT(
+              { username },
+              authenticationExpirySeconds,
+            );
           console.log("Successful auth");
+          const inAWeek = new Date(
+            Date.now() + authenticationExpirySeconds * 1000,
+          );
           setCookie(c, authCookieName(url.host), jwt, {
-            expires: new Date(
-              Date.now() + authenticationExpirySeconds * 1000,
-            ), // in a week
+            expires: inAWeek,
             // sameSite: "Strict",
             // httpOnly: true,
           });
+          if (rememberMe) {
+            setCookie(c, "refreshLogin", "true", { expires: inAWeek });
+          }
           const values = await c.req.parseBody();
           const from = values["from"];
           return c.redirect(typeof from === "string" ? from : "/");
         } else {
           console.error("Authentication failed, redirecting to auth page.");
+          lockoutTimer.addCount();
           return c.redirect("/.auth?error=1");
         }
       },
@@ -380,7 +403,7 @@ export class HttpServer {
     // Check auth
     this.app.use("*", async (c, next) => {
       const req = c.req;
-      if (!this.spaceServer.auth && !this.spaceServer.authToken) {
+      if (!this.spaceServer.auth) {
         // Auth disabled in this config, skip
         return next();
       }
@@ -389,21 +412,22 @@ export class HttpServer {
       const redirectToAuth = () => {
         // Try filtering api paths
         if (req.path.startsWith("/.") || req.path.endsWith(".md")) {
-          return c.redirect("/.auth");
+          return c.redirect("/.auth", 401);
         } else {
-          return c.redirect(`/.auth?from=${req.path}`);
+          return c.redirect(`/.auth?from=${req.path}`, 401);
         }
       };
       if (!excludedPaths.includes(url.pathname)) {
         const authCookie = getCookie(c, authCookieName(host));
 
-        if (!authCookie && this.spaceServer.authToken) {
+        if (!authCookie && this.spaceServer.auth?.authToken) {
           // Attempt Bearer Authorization based authentication
           const authHeader = req.header("Authorization");
           if (authHeader && authHeader.startsWith("Bearer ")) {
             const authToken = authHeader.slice("Bearer ".length);
-            if (authToken === this.spaceServer.authToken) {
+            if (authToken === this.spaceServer.auth.authToken) {
               // All good, let's proceed
+              this.refreshLogin(c, host);
               return next();
             } else {
               console.log(
@@ -435,8 +459,26 @@ export class HttpServer {
           return redirectToAuth();
         }
       }
+      this.refreshLogin(c, host);
       return next();
     });
+  }
+
+  private refreshLogin(c: Context, host: string) {
+    if (getCookie(c, "refreshLogin")) {
+      const inAWeek = new Date(
+        Date.now() + authenticationExpirySeconds * 1000,
+      );
+      const jwt = getCookie(c, authCookieName(host));
+      if (jwt) {
+        setCookie(c, authCookieName(host), jwt, {
+          expires: inAWeek,
+          // sameSite: "Strict",
+          // httpOnly: true,
+        });
+        setCookie(c, "refreshLogin", "true", { expires: inAWeek });
+      }
+    }
   }
 
   private addFsRoutes() {

@@ -1,6 +1,13 @@
 import customMarkdownStyle from "./style.ts";
-import { history, indentWithTab, standardKeymap } from "@codemirror/commands";
 import {
+  history,
+  indentWithTab,
+  insertNewlineAndIndent,
+  isolateHistory,
+  standardKeymap,
+} from "@codemirror/commands";
+import {
+  acceptCompletion,
   autocompletion,
   closeBrackets,
   closeBracketsKeymap,
@@ -95,7 +102,9 @@ export function createEditorState(
         addKeymap: true,
       }),
       extendedMarkdownLanguage.data.of({
-        closeBrackets: { brackets: ["(", "{", "[", "`"] },
+        closeBrackets: {
+          brackets: client.config?.autoCloseBrackets.split(""),
+        },
       }),
       syntaxHighlighting(customMarkdownStyle()),
       autocompletion({
@@ -247,6 +256,12 @@ export function createEditorState(
         class {
           update(update: ViewUpdate): void {
             if (update.docChanged) {
+              // Find if there's a history isolate in the transaction, if so it came from a local reload and we don't do anything
+              if (
+                update.transactions.some((t) => t.annotation(isolateHistory))
+              ) {
+                return;
+              }
               const changes: TextChange[] = [];
               update.changes.iterChanges((fromA, toA, fromB, toB, inserted) =>
                 changes.push({
@@ -354,8 +369,20 @@ export function createKeyBindings(client: Client): Extension {
     ...createCommandKeyBindings(client),
     ...createSmartQuoteKeyBindings(client),
     ...closeBracketsKeymap,
-    ...standardKeymap,
+    ...client.ui.viewState.uiOptions.vimMode
+      ? [
+        // Workaround for https://github.com/replit/codemirror-vim/issues/182;
+        // without this, Enter does nothing for ordinary paragraphs in insert
+        // mode.
+        {
+          key: "Enter",
+          run: insertNewlineAndIndent,
+          shift: insertNewlineAndIndent,
+        },
+      ]
+      : standardKeymap,
     ...completionKeymap,
+    { key: "Tab", run: acceptCompletion },
     indentWithTab,
   ]);
 }

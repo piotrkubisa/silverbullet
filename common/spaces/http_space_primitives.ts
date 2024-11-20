@@ -1,6 +1,9 @@
 import type { SpacePrimitives } from "./space_primitives.ts";
 import type { FileMeta } from "../../plug-api/types.ts";
-import { flushCachesAndUnregisterServiceWorker } from "../sw_util.ts";
+import {
+  flushCachesAndUnregisterServiceWorker,
+  unregisterServiceWorkers,
+} from "../sw_util.ts";
 import { encodePageURI } from "@silverbulletmd/silverbullet/lib/page_ref";
 
 const defaultFetchTimeout = 30000; // 30 seconds
@@ -34,32 +37,61 @@ export class HttpSpacePrimitives implements SpacePrimitives {
 
     try {
       options.signal = AbortSignal.timeout(fetchTimeout);
+      options.redirect = "manual";
       const result = await fetch(url, options);
       if (result.status === 503) {
         throw new Error("Offline");
       }
+      const redirectHeader = result.headers.get("location");
+
+      if (result.type === "opaqueredirect" && !redirectHeader) {
+        // This is a scenario where the server sent a redirect, but this redirect is not visible to the client, likely due to CORS
+        // The best we can do is to reload the page and hope that the server will redirect us to the correct location
+        alert(
+          "You are not authenticated, reloading to reauthenticate",
+        );
+        console.log("Unregistering service workers", redirectHeader);
+        await unregisterServiceWorkers();
+        location.reload();
+        // Let's throw to avoid any further processing
+        throw Error("Not authenticated");
+      }
+
+      // console.log("Got response", result.status, result.statusText, result.url);
+
       // Attempting to handle various authentication proxies
-      if (result.redirected) {
-        if (result.status === 401 || result.status === 403) {
+      if (result.status >= 300 && result.status < 400) {
+        if (redirectHeader) {
+          // Got a redirect
+          alert(
+            "Received an authentication redirect, redirecting to URL: " +
+              redirectHeader,
+          );
+          location.href = redirectHeader;
+          throw new Error("Redirected");
+        } else {
+          console.error("Got a redirect status but no location header", result);
+        }
+      }
+      // Check for unauthorized status
+      if (result.status === 401 || result.status === 403) {
+        // If it came with a redirect header, we'll redirect to that URL
+        if (redirectHeader) {
           console.log(
             "Received unauthorized status and got a redirect via the API so will redirect to URL",
             result.url,
           );
-          alert("You are not authenticated, redirecting to: " + result.url);
-          location.href = result.url;
+          alert("You are not authenticated, redirecting to: " + redirectHeader);
+          location.href = redirectHeader;
           throw new Error("Not authenticated");
         } else {
-          alert("Received a redirect, redirecting to URL: " + result.url);
-          location.href = result.url;
-          throw new Error("Redirected");
+          // If not, let's reload
+          alert(
+            "You are not authenticated, going to reload and hope that that kicks off authentication",
+          );
+          location.reload();
+          throw new Error("Not authenticated, got 401");
         }
-      }
-      if (result.status === 401 || result.status === 403) {
-        alert(
-          "You are not authenticated, going to reload and hope that that kicks off authentication",
-        );
-        location.reload();
-        throw new Error("Not authenticated, got 401");
       }
       return result;
     } catch (e: any) {

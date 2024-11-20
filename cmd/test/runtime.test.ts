@@ -1,14 +1,10 @@
 import { createSandbox } from "../../lib/plugos/sandboxes/deno_worker_sandbox.ts";
 import { System } from "../../lib/plugos/system.ts";
-import { assert, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { compileManifest } from "../compile.ts";
 import * as esbuild from "esbuild";
-import {
-  createSandbox as createNoSandbox,
-  runWithSystemLock,
-} from "../../lib/plugos/sandboxes/no_sandbox.ts";
 import type { SysCallMapping } from "../../lib/plugos/system.ts";
-import { sleep } from "../../lib/async.ts";
+import { fileURLToPath } from "node:url";
 
 Deno.test("Run a deno sandbox", {
   sanitizeResources: false,
@@ -37,10 +33,10 @@ Deno.test("Run a deno sandbox", {
   const tempDir = await Deno.makeTempDir();
 
   const workerPath = await compileManifest(
-    new URL("test_runtime.plug.yaml", import.meta.url).pathname,
+    fileURLToPath(new URL("test_runtime.plug.yaml", import.meta.url)),
     tempDir,
     {
-      configPath: new URL("../../deno.json", import.meta.url).pathname,
+      configPath: fileURLToPath(new URL("../../deno.json", import.meta.url)),
     },
   );
 
@@ -53,39 +49,6 @@ Deno.test("Run a deno sandbox", {
     addedNumbers: 3,
     yamlMessage: "hello: world\n",
   }, await plug.invoke("boot", []));
-
-  await system.unloadAll();
-
-  // Now load directly from module
-  const { plug: plugExport } = await import(
-    `file://${workerPath}`
-  );
-
-  const plug2 = await system.load("test", createNoSandbox(plugExport));
-
-  let running = false;
-  await Promise.all([
-    runWithSystemLock(system, async () => {
-      console.log("Starting first run");
-      running = true;
-      await sleep(5);
-      assertEquals({
-        addedNumbers: 3,
-        yamlMessage: "hello: world\n",
-      }, await plug2.invoke("boot", []));
-      console.log("Done first run");
-      running = false;
-    }),
-    runWithSystemLock(system, async () => {
-      assert(!running);
-      console.log("Starting second run");
-      assertEquals({
-        addedNumbers: 3,
-        yamlMessage: "hello: world\n",
-      }, await plug2.invoke("boot", []));
-      console.log("Done second run");
-    }),
-  ]);
 
   await system.unloadAll();
 

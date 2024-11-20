@@ -226,11 +226,40 @@ export function parseTreeToAST(tree: ParseTree, omitTrimmable = true): AST {
   }
   const ast: AST = [tree.type!];
   for (const node of tree.children!) {
-    if (node.type && !node.type.endsWith("Mark")) {
+    if (node.type && !node.type.endsWith("Mark") && node.type !== "Comment") {
       ast.push(parseTreeToAST(node, omitTrimmable));
     }
     if (node.text && (omitTrimmable && node.text.trim() || !omitTrimmable)) {
       ast.push(node.text);
+    }
+  }
+  return ast;
+}
+
+export function cleanTree(tree: ParseTree, omitTrimmable = true): ParseTree {
+  const parseErrorNodes = collectNodesOfType(tree, "⚠");
+  if (parseErrorNodes.length > 0) {
+    throw new Error(
+      `Parse error (${parseErrorNodes[0].from}:${parseErrorNodes[0].to}): ${
+        renderToText(tree)
+      }`,
+    );
+  }
+  if (tree.text !== undefined) {
+    return tree;
+  }
+  const ast: ParseTree = {
+    type: tree.type,
+    children: [],
+    from: tree.from,
+    to: tree.to,
+  };
+  for (const node of tree.children!) {
+    if (node.type && node.type !== "Comment") {
+      ast.children!.push(cleanTree(node, omitTrimmable));
+    }
+    if (node.text && (omitTrimmable && node.text.trim() || !omitTrimmable)) {
+      ast.children!.push(node);
     }
   }
   return ast;

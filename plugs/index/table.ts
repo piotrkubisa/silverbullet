@@ -1,4 +1,5 @@
 import type { IndexTreeEvent, ObjectValue } from "../../plug-api/types.ts";
+import { extractHashtag } from "../../plug-api/lib/tags.ts";
 import {
   collectNodesMatching,
   collectNodesOfType,
@@ -35,7 +36,10 @@ function concatChildrenTexts(nodes: ParseTree[]): string {
 export async function indexTables({ name: pageName, tree }: IndexTreeEvent) {
   const result: ObjectValue<TableRowObject>[] = [];
 
-  collectNodesMatching(tree, (t) => !!t.type?.startsWith("Table")).forEach(
+  collectNodesMatching(
+    tree,
+    (t) => !!t.type?.startsWith("Table") && t.type !== "TableConstructor",
+  ).forEach(
     (table) => {
       const rows = collectNodesOfType(table, "TableRow");
       const header = collectNodesOfType(table, "TableHeader")[0]; //Use first header. As per markdown spec there can only be exactly one
@@ -48,7 +52,7 @@ export async function indexTables({ name: pageName, tree }: IndexTreeEvent) {
         const tags = new Set<string>();
         collectNodesOfType(row, "Hashtag").forEach((h) => {
           // Push tag to the list, removing the initial #
-          tags.add(h.children![0].text!.substring(1));
+          tags.add(extractHashtag(h.children![0].text!));
         });
 
         const cells = collectNodesOfType(row, "TableCell");
